@@ -191,6 +191,7 @@ module private Parameters =
                             | Some found ->
                                 match found.payload with
                                 | PayloadFormat.JToken payloadValue->
+                                    printfn "Calling generateGrammarElementForSchema from getParametersFromExample"
                                     let parameterGrammarElement =
                                         generateGrammarElementForSchema declaredParameter.ActualSchema (Some payloadValue) []
                                     Some (declaredParameter.Name, parameterGrammarElement)
@@ -211,9 +212,10 @@ module private Parameters =
                 let restOfPayloads =
                     remainingExamples |> List.map (fun e -> getParametersFromExample e parameterList)
                 Some (firstPayload::restOfPayloads)
-
+        
         let schemaPayload =
             if dataFuzzing || examplePayloads.IsNone then
+                printfn "Calling generateGrammarElementForSchema from getParameters with list %A" (parameterList |> Seq.map (fun p -> p.Name))
                 Some (parameterList |> Seq.map (fun p -> (p.Name, generateGrammarElementForSchema p.ActualSchema None [])))
             else None
 
@@ -239,8 +241,10 @@ module private Parameters =
             |> Seq.filter (fun p -> p.Kind = parameterKind)
 
     let queryParameters (swaggerMethodDefinition:OpenApiOperation) exampleConfig dataFuzzing =
+        printfn "queryParameters: method description is %s" swaggerMethodDefinition.Description
         let queryParameters = swaggerMethodDefinition.ActualParameters
                                    |> Seq.filter (fun p -> p.Kind = NSwag.OpenApiParameterKind.Query)
+        printfn "queryParameters: %A" (swaggerMethodDefinition.ActualParameters |> Seq.map (fun p -> (p.Name, p.IsRequired)))
         // add shared parameters for the endpoint, if any
         let declaredSharedQueryParameters =
             getSharedParameters swaggerMethodDefinition.Parent.Parameters NSwag.OpenApiParameterKind.Query
@@ -315,6 +319,7 @@ let generateRequestPrimitives (requestId:RequestId)
                                 if resolveQueryDependencies then
                                     parameterList
                                     |> Seq.map (fun p ->
+                                                    printfn "%s, %A" (fst p) (snd p)
                                                     let newPayload, _ =
                                                         Restler.Dependencies.DependencyLookup.getDependencyPayload
                                                                             dependencies
@@ -457,7 +462,7 @@ let generateRequestGrammar (swaggerDocs:Types.ApiSpecFuzzingConfig list)
                                         config.UseBodyExamples |> Option.defaultValue false
                                     Parameters.bodyParameters m.Value (if useBodyExamples then exampleConfig else None) config.DataFuzzing
                             }
-
+                        printfn "Calling generateGrammarElementForSchema from getRequestData for responses"
                         let allResponseProperties = seq {
                             for r in m.Value.Responses do
                                 if validResponseCodes |> List.contains r.Key && not (isNull r.Value.ActualResponse.Schema) then
@@ -501,15 +506,13 @@ let generateRequestGrammar (swaggerDocs:Types.ApiSpecFuzzingConfig list)
                                          r, i, sd.dictionary)
                               .ToList()
         let perResourceDictionariesSeq =
-            processed
-            |> Seq.map (fun (reqList, i, dictionary) ->
+            (Seq.collect (fun (reqList, i, dictionary) ->
                             match dictionary with
                             | None -> Seq.empty
                             | Some d ->
                                 let dictionaryName = sprintf "dict_%d" i
                                 reqList |> Seq.map (fun (reqId, _) ->
-                                                        reqId.endpoint, (dictionaryName, d)))
-            |> Seq.concat
+                                                        reqId.endpoint, (dictionaryName, d))) processed)
             |> Seq.distinctBy (fun (endpoint, (dictName, _)) -> endpoint, dictName)
 
         // Fail if there are multiple instances of the same endpoint across Swagger files
@@ -526,7 +529,7 @@ let generateRequestGrammar (swaggerDocs:Types.ApiSpecFuzzingConfig list)
         let perResourceDictionaries =
             perResourceDictionariesSeq |> Map.ofSeq
 
-        let requestData = processed |> Seq.map (fun (x,_,_) -> x) |> Seq.concat
+        let requestData = (Seq.collect (fun (x,_,_) -> x) processed)
                           |> Seq.toArray
 
         requestData, perResourceDictionaries

@@ -146,6 +146,7 @@ let generatePythonParameter includeOptionalParameters parameterKind (parameterNa
             | PrimitiveType.Number ->
                 false
 
+        printfn "visitLeaf %A, %A" p.name p.isRequired
         if p.isRequired  || includeOptionalParameters then
             let nameSeq =
                 if String.IsNullOrEmpty p.name then
@@ -214,6 +215,7 @@ let generatePythonParameter includeOptionalParameters parameterKind (parameterNa
             Seq.empty
 
     let visitInner level (p:InnerProperty) (innerProperties:seq<seq<RequestPrimitiveType>>) =
+        printfn "visitInner %A, %A" p.name p.isRequired
         if p.isRequired || includeOptionalParameters then
             // Pretty-printing is only required for the body
             let tabSeq =
@@ -281,6 +283,7 @@ let generatePythonParameter includeOptionalParameters parameterKind (parameterNa
 
     match parameterKind with
     | ParameterKind.Query ->
+        printfn "parameterKind Query"
         let payloadPrimitives =
             // Remove the beginning and ending quotes - these must not be specified for query parameters.
             if payloadPrimitives |> Seq.head = Restler_static_string_constant "\"" then
@@ -295,6 +298,7 @@ let generatePythonParameter includeOptionalParameters parameterKind (parameterNa
         |> Seq.concat
     | ParameterKind.Body
     | ParameterKind.Path ->
+        printfn "parameterKind Body or Path"
         payloadPrimitives
 
 /// Generates the python restler grammar definitions corresponding to the request
@@ -302,6 +306,7 @@ let generatePythonFromRequestElement includeOptionalParameters (e:RequestElement
     match e with
     | Method m -> Restler_static_string_constant (sprintf "%s%s" (m.ToString().ToUpper()) SPACE) |> stn
     | RequestElement.Path parts ->
+        printfn "generatePythonFromRequestElement %A" parts  
         let x = parts
                 |> List.map (fun p -> getRestlerPythonPayload p false (*isQuoted*))
                 |> List.mapi (fun i primitive->
@@ -310,6 +315,7 @@ let generatePythonFromRequestElement includeOptionalParameters (e:RequestElement
                                               yield k } )
         x |> Seq.concat
     | QueryParameters qp ->
+        printfn "generatePythonFromRequestElement %A" qp 
         match qp with
         | ParameterList bp ->
             let parameters =
@@ -398,6 +404,7 @@ let generatePythonFromRequestElement includeOptionalParameters (e:RequestElement
 
 /// Generates the python restler grammar definitions corresponding to the request
 let generatePythonFromRequest (request:Request) includeOptionalParameters mergeStaticStrings =
+    printfn "%A" request.path
     let getParameterPayload queryOrBodyParameters =
         queryOrBodyParameters |> List.head |> snd
 

@@ -111,6 +111,7 @@ module SwaggerVisitors =
                                             (exampleValue:JToken option)
                                             (parents:NJsonSchema.JsonSchema list) =
 
+        printfn "generateGrammarElementForSchema-schema: %A" schema.Properties
         /// Returns the specified property when the object contains it.
         /// Note: if the example object does not contain the property,
         let extractPropertyFromObject propertyName (objectType:NJsonSchema.JsonObjectType) (exampleObj: JToken option) =
@@ -222,7 +223,7 @@ module SwaggerVisitors =
                     let innerProperty = { InnerProperty.name = propertyName
                                           payload = None
                                           propertyType = Property
-                                          isRequired = true
+                                          isRequired = property.IsRequired
                                           isReadOnly = (propertyIsReadOnly property) }
                     InternalNode (innerProperty, stn tree)
                 | NJsonSchema.JsonObjectType.Array ->
@@ -235,8 +236,9 @@ module SwaggerVisitors =
                         if propertyValue.IsSome && not propertyValue.Value.HasValues then
                             let leafProperty = { LeafProperty.name = propertyName
                                                  payload = Constant (PrimitiveType.Object, formatJTokenProperty PrimitiveType.Object pv.Value)
-                                                 isRequired = true
+                                                 isRequired = property.IsRequired
                                                  isReadOnly = (propertyIsReadOnly property) }
+                            printfn "%s = %A" propertyName property.IsRequired
                             LeafNode leafProperty
                         else
                             // Exit gracefully in case the Swagger is not valid and does not declare the array schema
@@ -244,8 +246,9 @@ module SwaggerVisitors =
                                 raise (NullArraySchema "Make sure the array definition has an element type in Swagger.")
                             let tree = generateGrammarElementForSchema property.Item.ActualSchema pv parents
                             let innerProperty = { InnerProperty.name = propertyName; payload = None; propertyType = Array
-                                                  isRequired = true
+                                                  isRequired = property.IsRequired
                                                   isReadOnly = (propertyIsReadOnly property) }
+                            printfn "%s = %A" propertyName property.IsRequired
                             InternalNode (innerProperty, stn tree)
                 | NJsonSchema.JsonObjectType.Object ->
                     // This object may or may not have nested properties.
@@ -259,10 +262,12 @@ module SwaggerVisitors =
                         let innerProperty = { InnerProperty.name = propertyName
                                               payload = None
                                               propertyType = Property // indicates presence of nested properties
-                                              isRequired = true
+                                              isRequired = property.IsRequired
                                               isReadOnly = (propertyIsReadOnly property) }
+                        printfn "%s = %A" propertyName property.IsRequired
                         InternalNode (innerProperty, stn tree)
                 | nst ->
+                    printfn "unsupported type: (%s, %A)" propertyName nst
                     raise (UnsupportedType (sprintf "Found unsupported type in body parameters: %A" nst))
 
         // As of NJsonSchema version 10, need to walk references explicitly.
@@ -274,6 +279,9 @@ module SwaggerVisitors =
             else s
 
         let schema = getActualSchema schema
+        
+        // for some reason, these properties are response properties
+        // printfn "schema properties: %A" schema.ActualProperties
 
         // If a property is recursive, stop processing and treat the child property as an object.
         // Dependencies will use the parent, and fuzzing nested properties may be implemented later as an optimization.
@@ -282,7 +290,11 @@ module SwaggerVisitors =
                 // TODO: need test case for this example.  Raise an exception to flag these cases.
                 // Most likely, the current example value should simply be used in the leaf property
                 raise (UnsupportedRecursiveExample (sprintf "%A" exampleValue))
-            let leafProperty = { LeafProperty.name = ""; payload = Fuzzable (PrimitiveType.String, ""); isRequired = true ; isReadOnly = false }
+            printfn "SwaggerVisitor1: %A" exampleValue
+            let leafProperty = { LeafProperty.name = ""; 
+                                 payload = Fuzzable (PrimitiveType.String, ""); 
+                                 isRequired = true; 
+                                 isReadOnly = false }
             LeafNode leafProperty
         else
             let declaredPropertyParameters =
@@ -354,6 +366,7 @@ module SwaggerVisitors =
                         LeafNode (getFuzzableValueForProperty
                                         ""
                                         schema
+                                        // TODO: what should be the correct value here? what's the meaning of schema
                                         true (*IsRequired*)
                                         false (*IsReadOnly*)
                                         (tryGetEnumeration schema) (*enumeration*)
@@ -372,6 +385,7 @@ module SwaggerVisitors =
                             else schema.Type
 
                         let primitiveType,_ = getGrammarPrimitiveTypeWithDefaultValue schemaType schema.Format
+                        printfn "SwaggerVisitor2: %A" exampleValue
                         LeafNode { LeafProperty.name = ""
                                    payload = FuzzingPayload.Constant (primitiveType, formatJTokenProperty primitiveType v)
                                    isRequired = true
@@ -381,6 +395,7 @@ module SwaggerVisitors =
                         // Cases like this arise when an allOf schema is visited, and the example does not contain
                         // any of the properties listed in the 'allOf'.
                         // Create an empty object
+                        printfn "SwaggerVisitor3: %A" exampleValue
                         let innerProperty = { InnerProperty.name = ""
                                               payload = None
                                               propertyType = NestedType.Object
@@ -388,6 +403,7 @@ module SwaggerVisitors =
                                               isReadOnly = false }
                         InternalNode (innerProperty, Seq.empty)
             else
+                printfn "SwaggerVisitor4: %A" exampleValue
                 let innerProperty = { InnerProperty.name = ""
                                       payload = None
                                       propertyType = if schema.IsArray then Array else Object
