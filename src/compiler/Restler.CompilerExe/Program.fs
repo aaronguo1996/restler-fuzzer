@@ -20,8 +20,6 @@ let main argv =
         | [|configFilePath|] ->
             if File.Exists configFilePath then
                 let config = Json.Compact.deserializeFile<Config> configFilePath
-                printfn "input file path: %s" configFilePath
-                printfn "input configuration: %A" config
                 let config =
                     match config.GrammarOutputDirectoryPath with
                     | None -> { config with GrammarOutputDirectoryPath = Some System.Environment.CurrentDirectory }

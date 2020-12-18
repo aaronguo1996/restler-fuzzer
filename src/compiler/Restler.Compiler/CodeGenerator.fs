@@ -284,29 +284,30 @@ let generatePythonParameter includeOptionalParameters parameterKind (parameterNa
 
     let payloadPrimitives = Tree.cataCtx visitLeaf visitInner getTreeLevel 0 parameterPayload
 
-    // TODO: it always generates this parameter without considering whether it is optional or not
-    match parameterKind with
-    | ParameterKind.Query ->
-        printfn "parameterKind Query"
-        if payloadPrimitives |> Seq.isEmpty then
-            payloadPrimitives
-        else
-            let payloadPrimitives =
-                // Remove the beginning and ending quotes - these must not be specified for query parameters.
-                if payloadPrimitives |> Seq.head = Restler_static_string_constant "\"" then
-                    let length = payloadPrimitives |> Seq.length
+    let payloadPrimitives = 
+        match parameterKind with
+            | ParameterKind.Query ->
+                printfn "parameterKind Query"
+                if payloadPrimitives |> Seq.isEmpty then
                     payloadPrimitives
-                    |> Seq.skip 1 |> Seq.take (length - 2)
                 else
-                    payloadPrimitives
-        
-            seq { yield stn (formatParameterName parameterName)
-                  yield payloadPrimitives }
-            |> Seq.concat
-    | ParameterKind.Body
-    | ParameterKind.Path ->
-        printfn "parameterKind Body or Path"
-        payloadPrimitives
+                    // Remove the beginning and ending quotes - these must not be specified for query parameters.
+                    if payloadPrimitives |> Seq.head = Restler_static_string_constant "\"" then
+                        let length = payloadPrimitives |> Seq.length
+                        payloadPrimitives
+                        |> Seq.skip 1 |> Seq.take (length - 2)
+                    else
+                        payloadPrimitives
+
+            | ParameterKind.Body
+            | ParameterKind.Path ->
+                printfn "parameterKind Body or Path"
+                payloadPrimitives
+
+    // FIXME: what kind of payload primitives do not have a parameter name?
+    seq { yield stn (formatParameterName parameterName)
+          yield payloadPrimitives }
+    |> Seq.concat
 
 /// Generates the python restler grammar definitions corresponding to the request
 let generatePythonFromRequestElement includeOptionalParameters (e:RequestElement) =

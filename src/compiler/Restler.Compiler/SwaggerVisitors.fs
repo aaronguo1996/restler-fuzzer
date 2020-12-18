@@ -315,7 +315,7 @@ module SwaggerVisitors =
                     let exValue, includeProperty = extractPropertyFromArray exampleValue
                     if not includeProperty then Seq.empty
                     else
-                        generateGrammarElementForSchema "" true schema.Item.ActualSchema exValue (schema::parents) |> stn
+                        generateGrammarElementForSchema "" isRequired schema.Item.ActualSchema exValue (schema::parents) |> stn
                 else Seq.empty
 
             let allOfParameterSchemas =
@@ -366,7 +366,7 @@ module SwaggerVisitors =
                     else
                         printfn "generateGrammarElementForSchema-schema type: %s :: %A, isRequired? %A" schemaName schema.Type isRequired
                         LeafNode (getFuzzableValueForProperty
-                                        schemaName
+                                        schemaName (* TODO: parameter name, only works for the body parameters or examples *)
                                         schema
                                         isRequired (*IsRequired*)
                                         false (*IsReadOnly*)

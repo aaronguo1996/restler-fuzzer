@@ -652,7 +652,6 @@ let main argv =
 
                 match args.task, args.taskParameters with
                 | Compile, CompilerParameters p ->
-                    printfn "init parameters %A" p
                     let! result = Compile.invokeCompiler taskWorkingDirectory p
                     return
                         {|
