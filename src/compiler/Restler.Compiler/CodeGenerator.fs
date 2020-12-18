@@ -131,6 +131,7 @@ let generatePythonParameter includeOptionalParameters parameterKind (parameterNa
             None
 
     let visitLeaf level (p:LeafProperty) =
+        printfn "generatePythonParameter-visitLeaf: %A, %A, %A" parameterName p.name p.isRequired
         let rec isPrimitiveTypeQuoted primitiveType isNullValue =
             match primitiveType with
             | _ when isNullValue -> false
@@ -146,8 +147,9 @@ let generatePythonParameter includeOptionalParameters parameterKind (parameterNa
             | PrimitiveType.Number ->
                 false
 
-        printfn "visitLeaf %A, %A" p.name p.isRequired
+        
         if p.isRequired  || includeOptionalParameters then
+            printfn "including this parameter: %A, %A, %A" p.isRequired includeOptionalParameters p.payload
             let nameSeq =
                 if String.IsNullOrEmpty p.name then
                     Seq.empty
@@ -212,6 +214,7 @@ let generatePythonParameter includeOptionalParameters parameterKind (parameterNa
 
             [ tabSeq ; nameSeq ; payloadSeq ] |> Seq.concat
         else
+            printfn "does not include this parameter"
             Seq.empty
 
     let visitInner level (p:InnerProperty) (innerProperties:seq<seq<RequestPrimitiveType>>) =
@@ -281,21 +284,25 @@ let generatePythonParameter includeOptionalParameters parameterKind (parameterNa
 
     let payloadPrimitives = Tree.cataCtx visitLeaf visitInner getTreeLevel 0 parameterPayload
 
+    // TODO: it always generates this parameter without considering whether it is optional or not
     match parameterKind with
     | ParameterKind.Query ->
         printfn "parameterKind Query"
-        let payloadPrimitives =
-            // Remove the beginning and ending quotes - these must not be specified for query parameters.
-            if payloadPrimitives |> Seq.head = Restler_static_string_constant "\"" then
-                let length = payloadPrimitives |> Seq.length
-                payloadPrimitives
-                |> Seq.skip 1 |> Seq.take (length - 2)
-            else
-                payloadPrimitives
-
-        seq { yield stn (formatParameterName parameterName)
-              yield payloadPrimitives }
-        |> Seq.concat
+        if payloadPrimitives |> Seq.isEmpty then
+            payloadPrimitives
+        else
+            let payloadPrimitives =
+                // Remove the beginning and ending quotes - these must not be specified for query parameters.
+                if payloadPrimitives |> Seq.head = Restler_static_string_constant "\"" then
+                    let length = payloadPrimitives |> Seq.length
+                    payloadPrimitives
+                    |> Seq.skip 1 |> Seq.take (length - 2)
+                else
+                    payloadPrimitives
+        
+            seq { yield stn (formatParameterName parameterName)
+                  yield payloadPrimitives }
+            |> Seq.concat
     | ParameterKind.Body
     | ParameterKind.Path ->
         printfn "parameterKind Body or Path"
@@ -322,9 +329,12 @@ let generatePythonFromRequestElement includeOptionalParameters (e:RequestElement
                 bp |> Seq.map (fun p -> generatePythonParameter includeOptionalParameters ParameterKind.Query p)
                    |> Seq.mapi (fun i primitive ->
                                     if i > 0 then
-                                        [ Restler_static_string_constant "&" |> stn
-                                          primitive ]
-                                        |> Seq.concat
+                                        if primitive |> Seq.isEmpty then
+                                            primitive
+                                        else
+                                            [ Restler_static_string_constant "&" |> stn
+                                              primitive ]
+                                            |> Seq.concat
                                     else primitive
                                )
                    |> Seq.concat
@@ -338,6 +348,7 @@ let generatePythonFromRequestElement includeOptionalParameters (e:RequestElement
     | Body b ->
         match b with
         | ParameterList bp ->
+            printfn "generatePythonFromRequestElement: body parameter name %A" (bp |> Seq.map (fst))
             let parameters =
                 bp |> Seq.map (fun p -> generatePythonParameter includeOptionalParameters ParameterKind.Body p)
                    |> Seq.mapi (fun i primitive->

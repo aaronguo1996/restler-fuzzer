@@ -107,7 +107,8 @@ module SwaggerVisitors =
         then None
         else Some (property.Default.ToString())
 
-    let rec generateGrammarElementForSchema (schema:NJsonSchema.JsonSchema)
+    let rec generateGrammarElementForSchema schemaName isRequired
+                                            (schema:NJsonSchema.JsonSchema)
                                             (exampleValue:JToken option)
                                             (parents:NJsonSchema.JsonSchema list) =
 
@@ -219,7 +220,7 @@ module SwaggerVisitors =
                     // The example property value needs to be examined according to the 'ActualSchema', which
                     // is passed through below.
 
-                    let tree = generateGrammarElementForSchema property.ActualSchema propertyValue parents
+                    let tree = generateGrammarElementForSchema propertyName property.IsRequired property.ActualSchema propertyValue parents
                     let innerProperty = { InnerProperty.name = propertyName
                                           payload = None
                                           propertyType = Property
@@ -244,7 +245,7 @@ module SwaggerVisitors =
                             // Exit gracefully in case the Swagger is not valid and does not declare the array schema
                             if isNull property.Item then
                                 raise (NullArraySchema "Make sure the array definition has an element type in Swagger.")
-                            let tree = generateGrammarElementForSchema property.Item.ActualSchema pv parents
+                            let tree = generateGrammarElementForSchema "" true property.Item.ActualSchema pv parents
                             let innerProperty = { InnerProperty.name = propertyName; payload = None; propertyType = Array
                                                   isRequired = property.IsRequired
                                                   isReadOnly = (propertyIsReadOnly property) }
@@ -253,7 +254,7 @@ module SwaggerVisitors =
                 | NJsonSchema.JsonObjectType.Object ->
                     // This object may or may not have nested properties.
                     // Similar to type 'None', just pass through the object and it will be taken care of downstream.
-                    let tree = generateGrammarElementForSchema property.ActualSchema propertyValue parents
+                    let tree = generateGrammarElementForSchema propertyName property.IsRequired property.ActualSchema propertyValue parents
                     // If the object has no properties, it should be set to its primitive type.
                     match tree with
                     | LeafNode l ->
@@ -291,9 +292,9 @@ module SwaggerVisitors =
                 // Most likely, the current example value should simply be used in the leaf property
                 raise (UnsupportedRecursiveExample (sprintf "%A" exampleValue))
             printfn "SwaggerVisitor1: %A" exampleValue
-            let leafProperty = { LeafProperty.name = ""; 
+            let leafProperty = { LeafProperty.name = schemaName; 
                                  payload = Fuzzable (PrimitiveType.String, ""); 
-                                 isRequired = true; 
+                                 isRequired = isRequired; 
                                  isReadOnly = false }
             LeafNode leafProperty
         else
@@ -314,12 +315,12 @@ module SwaggerVisitors =
                     let exValue, includeProperty = extractPropertyFromArray exampleValue
                     if not includeProperty then Seq.empty
                     else
-                        generateGrammarElementForSchema schema.Item.ActualSchema exValue (schema::parents) |> stn
+                        generateGrammarElementForSchema "" true schema.Item.ActualSchema exValue (schema::parents) |> stn
                 else Seq.empty
 
             let allOfParameterSchemas =
                 schema.AllOf
-                |> Seq.map (fun ao -> ao, generateGrammarElementForSchema ao.ActualSchema exampleValue (schema::parents))
+                |> Seq.map (fun ao -> ao, generateGrammarElementForSchema "" true ao.ActualSchema exampleValue (schema::parents))
 
             let allOfProperties =
                 allOfParameterSchemas
@@ -363,11 +364,11 @@ module SwaggerVisitors =
                     if schema.Type = JsonObjectType.None && allOfSchema.IsSome then
                         LeafNode allOfSchema.Value
                     else
+                        printfn "generateGrammarElementForSchema-schema type: %s :: %A, isRequired? %A" schemaName schema.Type isRequired
                         LeafNode (getFuzzableValueForProperty
-                                        ""
+                                        schemaName
                                         schema
-                                        // TODO: what should be the correct value here? what's the meaning of schema
-                                        true (*IsRequired*)
+                                        isRequired (*IsRequired*)
                                         false (*IsReadOnly*)
                                         (tryGetEnumeration schema) (*enumeration*)
                                         (tryGetDefault schema) (*defaultValue*))
@@ -388,7 +389,7 @@ module SwaggerVisitors =
                         printfn "SwaggerVisitor2: %A" exampleValue
                         LeafNode { LeafProperty.name = ""
                                    payload = FuzzingPayload.Constant (primitiveType, formatJTokenProperty primitiveType v)
-                                   isRequired = true
+                                   isRequired = isRequired
                                    isReadOnly = false }
                     else
 

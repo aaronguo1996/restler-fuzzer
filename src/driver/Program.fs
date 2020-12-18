@@ -480,7 +480,7 @@ let rec parseArgs (args:DriverArgs) = function
                                 UseBodyExamples = if config.UseBodyExamples.IsSome then
                                                       config.UseBodyExamples
                                                   else Restler.Config.DefaultConfig.UseBodyExamples
-                                IncludeOptionalParameters = true }
+                                (* IncludeOptionalParameters = true *) }
             parseArgs { args with task = Compile ; taskParameters = CompilerParameters config } rest
         | Choice2Of2 error ->
             Logging.logError <| sprintf "Invalid format for compiler config file %s. \
@@ -652,6 +652,7 @@ let main argv =
 
                 match args.task, args.taskParameters with
                 | Compile, CompilerParameters p ->
+                    printfn "init parameters %A" p
                     let! result = Compile.invokeCompiler taskWorkingDirectory p
                     return
                         {|

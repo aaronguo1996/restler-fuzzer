@@ -157,7 +157,7 @@ module private Parameters =
 
         let parameterList =
             endpoint.Split([|'/'|], StringSplitOptions.RemoveEmptyEntries)
-            |> Array.filter (fun p -> isPathParameter p)
+            |> Array.filter (isPathParameter)
             // By default, all path parameters are fuzzable (unless a producer or custom value is found for them later)
             |> Seq.choose (fun part -> let parameterName = getPathParameterName part
                                        let declaredParameter = allDeclaredPathParameters |> Seq.tryFind (fun p -> p.Name = parameterName)
@@ -167,9 +167,9 @@ module private Parameters =
                                            None
                                        | Some parameter ->
                                            let schema = parameter.ActualSchema
-                                           let leafProperty = getFuzzableValueForProperty ""
+                                           let leafProperty = getFuzzableValueForProperty parameterName
                                                                         schema
-                                                                        true (*IsRequired*)
+                                                                        parameter.IsRequired (*IsRequired*)
                                                                         false (*IsReadOnly*)
                                                                         (tryGetEnumeration schema)
                                                                         (tryGetDefault schema)
@@ -193,7 +193,11 @@ module private Parameters =
                                 | PayloadFormat.JToken payloadValue->
                                     printfn "Calling generateGrammarElementForSchema from getParametersFromExample"
                                     let parameterGrammarElement =
-                                        generateGrammarElementForSchema declaredParameter.ActualSchema (Some payloadValue) []
+                                        generateGrammarElementForSchema declaredParameter.Name 
+                                                                        declaredParameter.IsRequired
+                                                                        declaredParameter.ActualSchema
+                                                                        (Some payloadValue)
+                                                                        []
                                     Some (declaredParameter.Name, parameterGrammarElement)
                         )
 
@@ -216,7 +220,8 @@ module private Parameters =
         let schemaPayload =
             if dataFuzzing || examplePayloads.IsNone then
                 printfn "Calling generateGrammarElementForSchema from getParameters with list %A" (parameterList |> Seq.map (fun p -> p.Name))
-                Some (parameterList |> Seq.map (fun p -> (p.Name, generateGrammarElementForSchema p.ActualSchema None [])))
+                Some (parameterList |> Seq.map (fun p -> printfn "before calling generateGrammarElementForSchema"
+                                                         (p.Name, generateGrammarElementForSchema "" p.IsRequired p.ActualSchema None [])))
             else None
 
         match examplePayloads, schemaPayload with
@@ -244,7 +249,7 @@ module private Parameters =
         printfn "queryParameters: method description is %s" swaggerMethodDefinition.Description
         let queryParameters = swaggerMethodDefinition.ActualParameters
                                    |> Seq.filter (fun p -> p.Kind = NSwag.OpenApiParameterKind.Query)
-        printfn "queryParameters: %A" (swaggerMethodDefinition.ActualParameters |> Seq.map (fun p -> (p.Name, p.IsRequired)))
+        printfn "queryParameters: %A" (queryParameters |> Seq.map (fun p -> (p.Name, p.IsRequired)))
         // add shared parameters for the endpoint, if any
         let declaredSharedQueryParameters =
             getSharedParameters swaggerMethodDefinition.Parent.Parameters NSwag.OpenApiParameterKind.Query
@@ -253,9 +258,12 @@ module private Parameters =
             [queryParameters ; declaredSharedQueryParameters ] |> Seq.concat
         getParameters allQueryParameters exampleConfig dataFuzzing
 
+    let isBodyParameter (p:OpenApiParameter) = p.Kind = NSwag.OpenApiParameterKind.Body || 
+                                               p.Kind = NSwag.OpenApiParameterKind.FormData
+
     let bodyParameters (swaggerMethodDefinition:OpenApiOperation) exampleConfig dataFuzzing =
-        let bodyParameters = swaggerMethodDefinition.ActualParameters
-                                   |> Seq.filter (fun p -> p.Kind = NSwag.OpenApiParameterKind.Body)
+        let bodyParameters = swaggerMethodDefinition.ActualParameters |> Seq.filter isBodyParameter
+        printfn "bodyParameters: %A" (bodyParameters |> Seq.map (fun p -> (p.Name, p.IsRequired)))
         // add shared parameters for the endpoint, if any
         let declaredSharedBodyParameters =
             getSharedParameters swaggerMethodDefinition.Parent.Parameters NSwag.OpenApiParameterKind.Body
@@ -319,7 +327,6 @@ let generateRequestPrimitives (requestId:RequestId)
                                 if resolveQueryDependencies then
                                     parameterList
                                     |> Seq.map (fun p ->
-                                                    printfn "%s, %A" (fst p) (snd p)
                                                     let newPayload, _ =
                                                         Restler.Dependencies.DependencyLookup.getDependencyPayload
                                                                             dependencies
@@ -466,7 +473,7 @@ let generateRequestGrammar (swaggerDocs:Types.ApiSpecFuzzingConfig list)
                         let allResponseProperties = seq {
                             for r in m.Value.Responses do
                                 if validResponseCodes |> List.contains r.Key && not (isNull r.Value.ActualResponse.Schema) then
-                                    yield generateGrammarElementForSchema r.Value.ActualResponse.Schema None []
+                                    yield generateGrammarElementForSchema r.Key true r.Value.ActualResponse.Schema None []
                         }
 
                         // 'allResponseProperties' contains the schemas of all possible responses
